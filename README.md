@@ -161,8 +161,7 @@ This project is designed for:
 ## 📜 License
 
 This project is intended for **research and academic use**.
-Please contact Haitham for commercial licensing.
+Please contact me for commercial licensing.
 
----
 
 Just say the word 🙂
