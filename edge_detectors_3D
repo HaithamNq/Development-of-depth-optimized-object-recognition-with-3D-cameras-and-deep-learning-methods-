@@ -1,0 +1,87 @@
+import cv2
+import numpy as np
+import depth_generation  # Replace with your module for depth processing
+
+# Image path
+image_path = r"C:\Users\haith\PycharmProjects\automated disassembly\Data_and_codes\Images_with_Annotations\DATA\test\images\image_1.jpg"
+
+# Generate RGB and Depth map from the image
+RGB_np, depth_np = depth_generation.generate_rgb_and_depth(image_path)  # Depth data
+cx, cy, fx, fy = depth_generation.get_camera_parameters(image_path)  # Camera parameters
+
+# Step 1: Normalize the depth map
+depth_normalized = cv2.normalize(depth_np, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+# Step 2: Contrast enhancement on Depth
+depth_eq = cv2.equalizeHist(depth_normalized)
+
+# Step 3: Noise reduction on Depth map using Bilateral Filter
+depth_blur = cv2.bilateralFilter(depth_eq, d=9, sigmaColor=80, sigmaSpace=75)
+
+# Step 4: Calculate gradients in Depth Map using Sobel
+sobel_x = cv2.Sobel(depth_blur, cv2.CV_64F, 1, 0, ksize=3)  # Gradient in x direction
+sobel_y = cv2.Sobel(depth_blur, cv2.CV_64F, 0, 1, ksize=3)  # Gradient in y direction
+sobel_magnitude = cv2.magnitude(sobel_x, sobel_y)
+sobel_magnitude = np.uint8(sobel_magnitude)  # Convert to uint8 for visualization
+
+# Threshold Sobel edges to create binary image
+_, sobel_binary = cv2.threshold(sobel_magnitude, 50, 255, cv2.THRESH_BINARY)
+
+# Enhance Sobel edges with morphological operations
+kernel = np.ones((3, 3), np.uint8)
+sobel_dilated = cv2.dilate(sobel_binary, kernel, iterations=1)
+sobel_closed = cv2.morphologyEx(sobel_dilated, cv2.MORPH_CLOSE, kernel)
+
+# Step 5: Canny Edge Detection
+edges_canny = cv2.Canny(depth_blur, threshold1=60, threshold2=100)
+
+# Enhance Canny edges with morphological operations
+edges_canny_dilated = cv2.dilate(edges_canny, kernel, iterations=1)
+edges_canny_closed = cv2.morphologyEx(edges_canny_dilated, cv2.MORPH_CLOSE, kernel)
+
+# Step 6: Combine Sobel and Canny edges
+#combined_edges = cv2.bitwise_or(sobel_closed, edges_canny_closed)
+
+# Step 7: Find contours
+contours_combined, _ = cv2.findContours(edges_canny, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+# Step 8: Draw bounding boxes around objects
+min_contour_area = 500  # Adjust based on object size
+
+# Copy of the original RGB image for visualization
+img_bounding_boxes = RGB_np.copy()
+
+for contour in contours_combined:
+    if cv2.contourArea(contour) > min_contour_area:
+        # Axis-aligned bounding box
+        x, y, w, h = cv2.boundingRect(contour)
+        cv2.rectangle(img_bounding_boxes, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+        # Rotated bounding box
+        rect = cv2.minAreaRect(contour)
+        box = cv2.boxPoints(rect)
+        box = np.int32(box)  # Ensure integer coordinates
+
+        # Validate box
+        if len(box) == 0 or box.shape != (4, 2):
+            print("Invalid box, skipping this contour.")
+            continue
+
+        cv2.drawContours(img_bounding_boxes, [box], 0, (255, 0, 0), 2)
+
+        # Convex hull
+        hull = cv2.convexHull(contour)
+        cv2.drawContours(img_bounding_boxes, [hull], 0, (0, 255, 255), 2)
+
+# Step 9: Visualize the results
+cv2.imshow('Original Image', RGB_np)
+cv2.imshow('Normalized Depth', depth_normalized)
+cv2.imshow('Blurred Depth Image', depth_blur)
+cv2.imshow('Sobel Gradient Magnitude', sobel_magnitude)
+cv2.imshow('Sobel Edges (Closed)', sobel_closed)
+cv2.imshow('Canny Edges (Closed)', edges_canny_closed)
+cv2.imshow('Combined Edges', edges_canny)
+cv2.imshow('Bounding Boxes', img_bounding_boxes)
+
+cv2.waitKey(0)
+cv2.destroyAllWindows()
